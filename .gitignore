@@ -1,0 +1,6 @@
+*.exe
+lzhuff-store
+
+.env
+
+/storage/
