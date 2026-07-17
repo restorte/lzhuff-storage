@@ -5,28 +5,37 @@ import (
 	"testing"
 )
 
-func TestCompressV0(t *testing.T) {
+func TestRoundTrip(t *testing.T) {
+	buf := make([]byte, 256)
+	for i := range buf {
+		buf[i] = byte(i)
+	}
 	tests := []struct {
 		name string
 		in   []byte
-		want []byte
 	}{
-		{name: "empty", in: []byte{}, want: []byte{}},
-		{name: "one byte", in: []byte("a"), want: []byte{0, 'a'}},
-		{name: "eight bytes", in: []byte("abcdefgh"), want: []byte{0, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'}},
-		{name: "nine bytes", in: []byte("abcdefghi"), want: []byte{0, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 0, 'i'}},
-		{name: "abcabcabc", in: []byte("abcabcabc"), want: []byte{0, 'a', 'b', 'c', 'a', 'b', 'c', 'a', 'b', 0, 'c'}},
+		{name: "empty", in: []byte{}},
+		{name: "one byte", in: []byte("a")},
+		{name: "eight bytes", in: []byte("abcdefgh")},
+		{name: "nine bytes", in: []byte("abcdefghi")},
+		{name: "abcabcabc", in: []byte("abcabcabc")},
+		{name: "21 bytes", in: []byte("abcggtohabcmkikkruyvt")},
+		{name: "repeated", in: bytes.Repeat([]byte("a"), 10000)},
+		{name: "all bytes", in: buf},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Compress(tt.in)
+			compressed, err := Compress(tt.in)
 			if err != nil {
 				t.Fatalf("Compress(%v) returned unexpected error: %v", tt.in, err)
 			}
-			if !bytes.Equal(got, tt.want) {
-				t.Errorf("Copmress(%v) = %v, want %v", tt.in, got, tt.want)
+			got, err := Decompress(compressed)
+			if err != nil {
+				t.Fatalf("Deсompress(%v) returned unexpected error: %v", tt.in, err)
 			}
-
+			if !bytes.Equal(got, tt.in) {
+				t.Errorf("round-trip mismatch: in=%v, out=%v", tt.in, got)
+			}
 		})
 	}
 }

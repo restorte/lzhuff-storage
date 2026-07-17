@@ -22,5 +22,14 @@ func Compress(data []byte) ([]byte, error) {
 }
 
 func Decompress(data []byte) ([]byte, error) {
-	return nil, nil
+	var result []byte
+	pos := 0
+
+	for pos < len(data) {
+		pos += 1
+		end := min(pos+8, len(data))
+		result = append(result, data[pos:end]...)
+		pos = end
+	}
+	return result, nil
 }
