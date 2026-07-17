@@ -39,3 +39,25 @@ func TestRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+func TestToken(t *testing.T) {
+	tests := []struct {
+		name   string
+		offset int
+		lenght int
+	}{
+		{name: "offset = 300", offset: 300, lenght: 3},
+		{name: "offset = 4095", offset: 4095, lenght: 18},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotOFF, gotLEN := unpackToken(packToken(tt.offset, tt.lenght))
+			if gotOFF != tt.offset {
+				t.Errorf("gotOFF = %v, want = %v", gotOFF, tt.offset)
+			}
+			if gotLEN != tt.lenght {
+				t.Errorf("gotLEN = %v, want = %v", gotLEN, tt.lenght)
+			}
+		})
+	}
+}
