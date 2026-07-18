@@ -61,3 +61,31 @@ func TestToken(t *testing.T) {
 		})
 	}
 }
+
+func TestFindMatch(t *testing.T) {
+	tests := []struct {
+		name    string
+		in      []byte
+		i       int
+		wantLEN int
+		wantOFF int
+	}{
+		{name: "zero matches", in: []byte("abcdtyujh"), i: 3, wantLEN: 0, wantOFF: 0},
+		{name: "i = 0", in: []byte("asdfga"), i: 0, wantLEN: 0, wantOFF: 0},
+		{name: "pure coincidence", in: []byte("zxczxc"), i: 3, wantLEN: 3, wantOFF: 3},
+		{name: "overlap (run)", in: []byte("aaaaaaa"), i: 1, wantLEN: 6, wantOFF: 1},
+		{name: "MAX_MATCH ceiling", in: []byte(bytes.Repeat([]byte("a"), 30)), i: 1, wantLEN: 18, wantOFF: 1},
+		{name: "shorter than the threshold", in: []byte("abcab"), i: 3, wantLEN: 0, wantOFF: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotOFF, gotLEN := findMatch(tt.in, tt.i)
+			if gotLEN != tt.wantLEN {
+				t.Errorf("gotLEN = %v, want = %v", gotLEN, tt.wantLEN)
+			}
+			if gotOFF != tt.wantOFF {
+				t.Errorf("gotOFF = %v, want = %v", gotOFF, tt.wantOFF)
+			}
+		})
+	}
+}

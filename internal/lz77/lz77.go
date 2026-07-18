@@ -6,6 +6,26 @@ const (
 	MAX_MATCH = 18
 )
 
+func findMatch(data []byte, i int) (offset, length int) {
+	bestLen, bestOffset := 0, 0
+	start := max(0, i-WINDOW)
+
+	for j := start; j < i; j++ {
+		k := 0
+		for i+k < len(data) && k < MAX_MATCH && data[j+k] == data[i+k] {
+			k += 1
+		}
+		if k > bestLen {
+			bestLen = k
+			bestOffset = i - j
+		}
+	}
+	if bestLen >= MIN_MATCH {
+		return bestOffset, bestLen
+	}
+	return 0, 0
+}
+
 func packToken(offset int, length int) (older, young byte) {
 	length -= MIN_MATCH
 	token := (offset << 4) | length
