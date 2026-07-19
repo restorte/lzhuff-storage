@@ -77,19 +77,24 @@ func Compress(data []byte) ([]byte, error) {
 	}
 
 	for pos < len(data) {
-		offset, length := findMatch(data, pos, head, prev)
+		offset0, length0 := findMatch(data, pos, head, prev)
 		insert(head, prev, data, pos)
 
-		if length > 0 {
-			control |= 1 << count
-			older, young := packToken(offset, length)
-			chunk = append(chunk, older, young)
+		if length0 > 0 {
+			_, length1 := findMatch(data, pos+1, head, prev)
+			if length1 > length0 {
+				chunk = append(chunk, data[pos])
+				pos += 1
+			} else {
+				control |= 1 << count
+				older, young := packToken(offset0, length0)
+				chunk = append(chunk, older, young)
 
-			for p := pos + 1; p < pos+length; p++ {
-				insert(head, prev, data, p)
+				for p := pos + 1; p < pos+length0; p++ {
+					insert(head, prev, data, p)
+				}
+				pos += length0
 			}
-
-			pos += length
 		} else {
 			chunk = append(chunk, data[pos])
 			pos += 1

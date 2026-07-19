@@ -76,6 +76,7 @@ func TestFindMatch(t *testing.T) {
 		{name: "overlap (run)", in: []byte("aaaaaaa"), i: 1, wantLEN: 6, wantOFF: 1},
 		{name: "MAX_MATCH ceiling", in: []byte(bytes.Repeat([]byte("a"), 30)), i: 1, wantLEN: 18, wantOFF: 1},
 		{name: "shorter than the threshold", in: []byte("abcab"), i: 3, wantLEN: 0, wantOFF: 0},
+		{name: "lazy defer", in: []byte("ABCxBCDEFGyABCDEFG")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
