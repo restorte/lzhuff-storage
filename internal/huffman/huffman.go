@@ -74,19 +74,26 @@ func buildCodes(root *node, prefix string, codes map[byte]string) {
 	buildCodes(root.right, prefix+"1", codes)
 }
 
-func encode(data []byte, codes map[byte]string) string {
-	res := ""
+func encode(data []byte, codes map[byte]string, w *bitWriter) {
 	for _, b := range data {
-		res += codes[b]
+		code := codes[b]
+		for i := range code {
+			w.writeBit(code[i] - '0')
+		}
 	}
-	return res
 }
 
-func decode(encoded string, root *node) []byte {
-	res := []byte{}
+func decode(r *bitReader, root *node, n int) []byte {
+	res := make([]byte, 0, n)
+	if root.left == nil && root.right == nil {
+		for len(res) < n {
+			res = append(res, root.char)
+		}
+		return res
+	}
 	cur := root
-	for _, ch := range encoded {
-		if ch == '0' {
+	for len(res) < n {
+		if r.readBit() == 0 {
 			cur = cur.left
 		} else {
 			cur = cur.right
@@ -97,4 +104,72 @@ func decode(encoded string, root *node) []byte {
 		}
 	}
 	return res
+}
+
+func (w *bitWriter) writeByte(b byte) {
+	for i := 7; i >= 0; i-- {
+		w.writeBit((b >> i) & 1)
+	}
+}
+
+func (r *bitReader) readByte() byte {
+	var b byte
+	for i := 0; i < 8; i++ {
+		b = (b << 1) | r.readBit()
+	}
+	return b
+}
+
+func writeTree(n *node, w *bitWriter) {
+	if n.left == nil && n.right == nil {
+		w.writeBit(1)
+		w.writeByte(n.char)
+		return
+	}
+	w.writeBit(0)
+	writeTree(n.left, w)
+	writeTree(n.right, w)
+}
+
+func readTree(r *bitReader) *node {
+	if r.readBit() == 1 {
+		return &node{char: r.readByte()}
+	}
+	left := readTree(r)
+	right := readTree(r)
+	return &node{left: left, right: right}
+}
+
+func Compress(data []byte) []byte {
+	w := &bitWriter{}
+	n := len(data)
+	w.writeByte(byte(n >> 24))
+	w.writeByte(byte(n >> 16))
+	w.writeByte(byte(n >> 8))
+	w.writeByte(byte(n))
+	if n == 0 {
+		w.flush()
+		return w.buf
+	}
+	root := buildHuffmanTree(countFreq(data))
+	codes := map[byte]string{}
+	buildCodes(root, "", codes)
+	writeTree(root, w)
+	encode(data, codes, w)
+	w.flush()
+	return w.buf
+}
+
+func Decompress(data []byte) []byte {
+	r := &bitReader{buf: data}
+	b0 := int(r.readByte())
+	b1 := int(r.readByte())
+	b2 := int(r.readByte())
+	b3 := int(r.readByte())
+	n := b0<<24 | b1<<16 | b2<<8 | b3
+	if n == 0 {
+		return []byte{}
+	}
+	root := readTree(r)
+	return decode(r, root, n)
 }
