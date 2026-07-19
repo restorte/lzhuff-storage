@@ -7,9 +7,11 @@ import (
 
 func TestRoundTrip(t *testing.T) {
 	buf := make([]byte, 256)
+
 	for i := range buf {
 		buf[i] = byte(i)
 	}
+
 	tests := []struct {
 		name string
 		in   []byte
@@ -23,16 +25,21 @@ func TestRoundTrip(t *testing.T) {
 		{name: "repeated", in: bytes.Repeat([]byte("a"), 10000)},
 		{name: "all bytes", in: buf},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			compressed, err := Compress(tt.in)
+
 			if err != nil {
 				t.Fatalf("Compress(%v) returned unexpected error: %v", tt.in, err)
 			}
+
 			got, err := Decompress(compressed)
+
 			if err != nil {
 				t.Fatalf("Deсompress(%v) returned unexpected error: %v", tt.in, err)
 			}
+
 			if !bytes.Equal(got, tt.in) {
 				t.Errorf("round-trip mismatch: in=%v, out=%v", tt.in, got)
 			}
@@ -49,12 +56,15 @@ func TestToken(t *testing.T) {
 		{name: "offset = 300", offset: 300, lenght: 3},
 		{name: "offset = 4095", offset: 4095, lenght: 18},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotOFF, gotLEN := unpackToken(packToken(tt.offset, tt.lenght))
+
 			if gotOFF != tt.offset {
 				t.Errorf("gotOFF = %v, want = %v", gotOFF, tt.offset)
 			}
+
 			if gotLEN != tt.lenght {
 				t.Errorf("gotLEN = %v, want = %v", gotLEN, tt.lenght)
 			}
@@ -78,20 +88,25 @@ func TestFindMatch(t *testing.T) {
 		{name: "shorter than the threshold", in: []byte("abcab"), i: 3, wantLEN: 0, wantOFF: 0},
 		{name: "lazy defer", in: []byte("ABCxBCDEFGyABCDEFG")},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			head := make([]int, HASH_SIZE)
+
 			for i := range head {
 				head[i] = -1
 			}
 			prev := make([]int, len(tt.in))
+
 			for p := 0; p < tt.i; p++ {
 				insert(head, prev, tt.in, p)
 			}
 			gotOFF, gotLEN := findMatch(tt.in, tt.i, head, prev)
+
 			if gotLEN != tt.wantLEN {
 				t.Errorf("gotLEN = %v, want = %v", gotLEN, tt.wantLEN)
 			}
+
 			if gotOFF != tt.wantOFF {
 				t.Errorf("gotOFF = %v, want = %v", gotOFF, tt.wantOFF)
 			}

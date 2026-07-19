@@ -18,29 +18,38 @@ func hash(a, b, c int) int {
 func findMatch(data []byte, i int, head, prev []int) (offset, length int) {
 	bestLen, bestOffset := 0, 0
 	start := max(0, i-WINDOW)
+
 	if i+2 >= len(data) {
 		return 0, 0
 	}
+
 	j := head[hash(int(data[i]), int(data[i+1]), int(data[i+2]))]
 	chain := 0
+
 	for j >= start && chain < MAX_CHAIN {
 		k := 0
+
 		for i+k < len(data) && k < MAX_MATCH && data[j+k] == data[i+k] {
 			k += 1
 		}
+
 		if k > bestLen {
 			bestLen = k
 			bestOffset = i - j
 		}
+
 		if bestLen >= MAX_MATCH {
 			break
 		}
+
 		j = prev[j]
 		chain += 1
 	}
+
 	if bestLen >= MIN_MATCH {
 		return bestOffset, bestLen
 	}
+
 	return 0, 0
 }
 
@@ -48,6 +57,7 @@ func insert(head, prev []int, data []byte, p int) {
 	if p+2 >= len(data) {
 		return
 	}
+
 	h := hash(int(data[p]), int(data[p+1]), int(data[p+2]))
 	prev[p] = head[h]
 	head[h] = p
@@ -88,9 +98,11 @@ func Compress(data []byte) ([]byte, error) {
 
 		if length0 > 0 {
 			_, length1 := findMatch(data, pos+1, head, prev)
+
 			if length1 > length0 {
 				chunk = append(chunk, data[pos])
 				pos += 1
+
 			} else {
 				control |= 1 << count
 				older, young := packToken(offset0, length0)
@@ -101,11 +113,13 @@ func Compress(data []byte) ([]byte, error) {
 				}
 				pos += length0
 			}
+
 		} else {
 			chunk = append(chunk, data[pos])
 			pos += 1
 		}
 		count++
+
 		if count == 8 {
 			result = append(result, byte(control))
 			result = append(result, chunk...)
@@ -113,10 +127,12 @@ func Compress(data []byte) ([]byte, error) {
 		}
 
 	}
+
 	if count > 0 {
 		result = append(result, byte(control))
 		result = append(result, chunk...)
 	}
+
 	return result, nil
 }
 
@@ -127,22 +143,28 @@ func Decompress(data []byte) ([]byte, error) {
 	for pos < len(data) {
 		control := data[pos]
 		pos++
+
 		for i := 0; i < 8; i++ {
+
 			if pos >= len(data) {
 				break
 			}
+
 			if control&(1<<i) != 0 {
 				offset, length := unpackToken(data[pos], data[pos+1])
 				pos += 2
 				srcStart := len(result) - offset
+
 				for k := 0; k < length; k++ {
 					result = append(result, result[srcStart+k])
 				}
+
 			} else {
 				result = append(result, data[pos])
 				pos++
 			}
 		}
 	}
+
 	return result, nil
 }
