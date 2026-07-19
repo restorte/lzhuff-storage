@@ -79,7 +79,15 @@ func TestFindMatch(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotOFF, gotLEN := findMatch(tt.in, tt.i)
+			head := make([]int, HASH_SIZE)
+			for i := range head {
+				head[i] = -1
+			}
+			prev := make([]int, len(tt.in))
+			for p := 0; p < tt.i; p++ {
+				insert(head, prev, tt.in, p)
+			}
+			gotOFF, gotLEN := findMatch(tt.in, tt.i, head, prev)
 			if gotLEN != tt.wantLEN {
 				t.Errorf("gotLEN = %v, want = %v", gotLEN, tt.wantLEN)
 			}
@@ -87,5 +95,19 @@ func TestFindMatch(t *testing.T) {
 				t.Errorf("gotOFF = %v, want = %v", gotOFF, tt.wantOFF)
 			}
 		})
+	}
+}
+
+func TestHash(t *testing.T) {
+	for a := 0; a < 256; a++ {
+		for b := 0; b < 256; b++ {
+			for c := 0; c < 256; c++ {
+				h := hash(a, b, c)
+				if h < 0 || h >= HASH_SIZE {
+					t.Fatalf("hash(%d,%d,%d) = %d вне диапазона", a, b, c, h)
+
+				}
+			}
+		}
 	}
 }

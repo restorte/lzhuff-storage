@@ -4,13 +4,24 @@ const (
 	WINDOW    = 4096
 	MIN_MATCH = 3
 	MAX_MATCH = 18
+	HASH_BITS = 15
+	HASH_SIZE = 32768
+	HASH_MASK = HASH_SIZE - 1
 )
 
-func findMatch(data []byte, i int) (offset, length int) {
+func hash(a, b, c int) int {
+	h := (a<<10 ^ b<<5 ^ c) & HASH_MASK
+	return h
+}
+
+func findMatch(data []byte, i int, head, prev []int) (offset, length int) {
 	bestLen, bestOffset := 0, 0
 	start := max(0, i-WINDOW)
-
-	for j := start; j < i; j++ {
+	if i+2 >= len(data) {
+		return 0, 0
+	}
+	j := head[hash(int(data[i]), int(data[i+1]), int(data[i+2]))]
+	for j >= start {
 		k := 0
 		for i+k < len(data) && k < MAX_MATCH && data[j+k] == data[i+k] {
 			k += 1
@@ -19,11 +30,21 @@ func findMatch(data []byte, i int) (offset, length int) {
 			bestLen = k
 			bestOffset = i - j
 		}
+		j = prev[j]
 	}
 	if bestLen >= MIN_MATCH {
 		return bestOffset, bestLen
 	}
 	return 0, 0
+}
+
+func insert(head, prev []int, data []byte, p int) {
+	if p+2 >= len(data) {
+		return
+	}
+	h := hash(int(data[p]), int(data[p+1]), int(data[p+2]))
+	prev[p] = head[h]
+	head[h] = p
 }
 
 func packToken(offset int, length int) (older, young byte) {
@@ -45,17 +66,29 @@ func unpackToken(older, young byte) (offset int, length int) {
 }
 
 func Compress(data []byte) ([]byte, error) {
+	head := make([]int, HASH_SIZE)
+	prev := make([]int, len(data))
 	var result []byte
 	var chunk []byte
 	count, pos, control := 0, 0, 0
 
+	for i := range head {
+		head[i] = -1
+	}
+
 	for pos < len(data) {
-		offset, length := findMatch(data, pos)
+		offset, length := findMatch(data, pos, head, prev)
+		insert(head, prev, data, pos)
 
 		if length > 0 {
 			control |= 1 << count
 			older, young := packToken(offset, length)
 			chunk = append(chunk, older, young)
+
+			for p := pos + 1; p < pos+length; p++ {
+				insert(head, prev, data, p)
+			}
+
 			pos += length
 		} else {
 			chunk = append(chunk, data[pos])
