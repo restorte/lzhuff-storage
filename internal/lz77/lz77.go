@@ -7,6 +7,7 @@ const (
 	HASH_BITS = 15
 	HASH_SIZE = 32768
 	HASH_MASK = HASH_SIZE - 1
+	MAX_CHAIN = 256
 )
 
 func hash(a, b, c int) int {
@@ -21,7 +22,8 @@ func findMatch(data []byte, i int, head, prev []int) (offset, length int) {
 		return 0, 0
 	}
 	j := head[hash(int(data[i]), int(data[i+1]), int(data[i+2]))]
-	for j >= start {
+	chain := 0
+	for j >= start && chain < MAX_CHAIN {
 		k := 0
 		for i+k < len(data) && k < MAX_MATCH && data[j+k] == data[i+k] {
 			k += 1
@@ -30,7 +32,11 @@ func findMatch(data []byte, i int, head, prev []int) (offset, length int) {
 			bestLen = k
 			bestOffset = i - j
 		}
+		if bestLen >= MAX_MATCH {
+			break
+		}
 		j = prev[j]
+		chain += 1
 	}
 	if bestLen >= MIN_MATCH {
 		return bestOffset, bestLen
