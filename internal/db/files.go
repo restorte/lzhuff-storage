@@ -61,3 +61,36 @@ func (r *FilesRepo) Claim(ctx context.Context) (*Task, error) {
 
 	return &t, nil
 }
+
+func (r *FilesRepo) MarkDone(ctx context.Context, id string, sizeCompressed int64) error {
+	const q = `UPDATE files
+			   SET status = 'done', size_compressed = $2, updated_at = now()
+			   WHERE id = $1`
+	_, err := r.pool.Exec(ctx, q, id, sizeCompressed)
+	if err != nil {
+		return fmt.Errorf("files: mark done: %w", err)
+	}
+	return nil
+}
+
+func (r *FilesRepo) MarkError(ctx context.Context, id string, reason string) error {
+	const q = `UPDATE files
+			   SET status = 'error', error = $2, updated_at = now()
+			   WHERE id = $1`
+	_, err := r.pool.Exec(ctx, q, id, reason)
+	if err != nil {
+		return fmt.Errorf("files: mark error: %w", err)
+	}
+	return nil
+}
+
+func (r *FilesRepo) ResetStuck(ctx context.Context) (int64, error) {
+	const q = `UPDATE files
+			   SET status = 'pending', updated_at = now()
+			   WHERE status = 'processing'`
+	tag, err := r.pool.Exec(ctx, q)
+	if err != nil {
+		return 0, fmt.Errorf("files: reset stuck: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
