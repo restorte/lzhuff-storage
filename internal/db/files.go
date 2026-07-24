@@ -6,8 +6,11 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var ErrInvalidID = errors.New("invalid id")
 
 type FilesRepo struct {
 	pool *pgxpool.Pool
@@ -18,6 +21,13 @@ type Task struct {
 	Name         string
 	SizeOriginal int64
 	SHA256       []byte
+}
+
+type File struct {
+	ID     string
+	Name   string
+	Status string
+	Error  string
 }
 
 func NewFilesRepo(pool *pgxpool.Pool) *FilesRepo {
@@ -36,6 +46,25 @@ func (r *FilesRepo) Create(ctx context.Context, name string, sizeOriginal int64,
 	}
 
 	return id, nil
+}
+
+func (r *FilesRepo) Get(ctx context.Context, id string) (*File, error) {
+	const q = `SELECT id, name, status, COALESCE(error, '')
+			   FROM files WHERE id = $1`
+
+	var f File
+	err := r.pool.QueryRow(ctx, q, id).Scan(&f.ID, &f.Name, &f.Status, &f.Error)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "22P02" {
+		return nil, ErrInvalidID
+	}
+	if err != nil {
+		return nil, fmt.Errorf("files: get: %w", err)
+	}
+	return &f, nil
 }
 
 func (r *FilesRepo) Claim(ctx context.Context) (*Task, error) {
