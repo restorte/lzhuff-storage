@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	"github.com/restorte/lzhuff-store/internal/codec"
 	"github.com/restorte/lzhuff-store/internal/db"
 	"github.com/restorte/lzhuff-store/internal/storage"
 )
+
+const pollInterval = time.Second
 
 type Worker struct {
 	repo       *db.FilesRepo
@@ -56,4 +60,47 @@ func (w *Worker) processOne(ctx context.Context) (bool, error) {
 		return true, fmt.Errorf("worker: mark done: %w", err)
 	}
 	return true, nil
+}
+
+func (w *Worker) Run(ctx context.Context, n int) error {
+	reset, err := w.repo.ResetStuck(ctx)
+	if err != nil {
+		return fmt.Errorf("worker: reset stuck: %w", err)
+	}
+	if reset > 0 {
+		log.Printf("worker: recovered %d stuck task(s)", reset)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			w.loop(ctx, id)
+		}(i)
+	}
+	wg.Wait()
+	return nil
+}
+
+func (w *Worker) loop(ctx context.Context, id int) {
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		worked, err := w.processOne(ctx)
+		if err != nil {
+			log.Printf("worker %d: %v", id, err)
+		}
+		if worked {
+			continue
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pollInterval):
+		}
+	}
 }
