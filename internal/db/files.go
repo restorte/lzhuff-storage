@@ -20,6 +20,13 @@ type Task struct {
 	SHA256       []byte
 }
 
+type File struct {
+	ID     string
+	Name   string
+	Status string
+	Error  string
+}
+
 func NewFilesRepo(pool *pgxpool.Pool) *FilesRepo {
 	return &FilesRepo{pool: pool}
 }
@@ -36,6 +43,21 @@ func (r *FilesRepo) Create(ctx context.Context, name string, sizeOriginal int64,
 	}
 
 	return id, nil
+}
+
+func (r *FilesRepo) Get(ctx context.Context, id string) (*File, error) {
+	const q = `SELECT id, name, status, COALESCE(error, '')
+			   FROM files WHERE id = $1`
+
+	var f File
+	err := r.pool.QueryRow(ctx, q, id).Scan(&f.ID, &f.Name, &f.Status, &f.Error)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("files: get: %w", err)
+	}
+	return &f, nil
 }
 
 func (r *FilesRepo) Claim(ctx context.Context) (*Task, error) {
