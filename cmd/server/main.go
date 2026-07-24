@@ -2,27 +2,83 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
 	"time"
 
+	"github.com/restorte/lzhuff-store/internal/api"
 	"github.com/restorte/lzhuff-store/internal/db"
+	"github.com/restorte/lzhuff-store/internal/storage"
+	"github.com/restorte/lzhuff-store/internal/worker"
 )
 
 func main() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		log.Fatal("DATABASE_URL is not set")
 	}
+	root := os.Getenv("STORAGE_ROOT")
+	if root == "" {
+		root = "storage"
+	}
+	addr := os.Getenv("ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	pool, err := db.New(ctx, dsn)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer pool.Close()
-	log.Println("connected to database")
+	repo := db.NewFilesRepo(pool)
 
+	originals, err := storage.New(filepath.Join(root, "originals"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	containers, err := storage.New(filepath.Join(root, "containers"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	w := worker.New(repo, originals, containers)
+	workerDone := make(chan struct{})
+	go func() {
+		if err := w.Run(ctx, 4); err != nil {
+			log.Printf("worker: %v", err)
+		}
+		close(workerDone)
+	}()
+
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: api.New(repo, originals, containers).Routes(),
+	}
+	go func() {
+		log.Printf("listening on %s", addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("shutting down...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("server shutdown: %v", err)
+	}
+
+	<-workerDone
+	log.Println("stopped")
 }
