@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 
@@ -59,6 +60,10 @@ func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	f, err := a.repo.Get(r.Context(), id)
+	if errors.Is(err, db.ErrInvalidID) {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		http.Error(w, "lookup", http.StatusInternalServerError)
 		return

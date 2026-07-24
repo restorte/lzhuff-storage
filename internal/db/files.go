@@ -6,8 +6,11 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var ErrInvalidID = errors.New("invalid id")
 
 type FilesRepo struct {
 	pool *pgxpool.Pool
@@ -53,6 +56,10 @@ func (r *FilesRepo) Get(ctx context.Context, id string) (*File, error) {
 	err := r.pool.QueryRow(ctx, q, id).Scan(&f.ID, &f.Name, &f.Status, &f.Error)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "22P02" {
+		return nil, ErrInvalidID
 	}
 	if err != nil {
 		return nil, fmt.Errorf("files: get: %w", err)
