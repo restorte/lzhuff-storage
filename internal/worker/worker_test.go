@@ -3,6 +3,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"os"
 	"testing"
 
@@ -48,8 +49,8 @@ func TestWorker_ProcessOne_Success(t *testing.T) {
 	w, repo, pool, originals, containers, ctx := newTestWorker(t)
 
 	raw := []byte("hello hello hello world world world")
-
-	id, err := repo.Create(ctx, "wtest.txt", int64(len(raw)), []byte("sha-placeholder"))
+	sum := sha256.Sum256(raw)
+	id, err := repo.Create(ctx, "wtest.txt", int64(len(raw)), sum[:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +90,46 @@ func TestWorker_ProcessOne_Success(t *testing.T) {
 	}
 	if !bytes.Equal(back, raw) {
 		t.Errorf("round-trip through worker: got %q, want %q", back, raw)
+	}
+
+	if _, err := originals.Read(id); err == nil {
+		t.Error("original still on disk after a verified compression")
+	}
+}
+
+func TestWorker_ProcessOne_ChecksumMismatchKeepsOriginal(t *testing.T) {
+	w, repo, pool, originals, _, ctx := newTestWorker(t)
+
+	raw := []byte("content whose checksum will not match")
+
+	id, err := repo.Create(ctx, "bad-sum.txt", int64(len(raw)), []byte("not-a-real-sha256"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM files WHERE id=$1`, id) })
+
+	if err := originals.Write(id, raw); err != nil {
+		t.Fatal(err)
+	}
+
+	worked, err := w.processOne(ctx)
+	if err != nil {
+		t.Fatalf("processOne returned a system error: %v", err)
+	}
+	if !worked {
+		t.Fatal("expected processOne to find the task")
+	}
+
+	var status string
+	if err := pool.QueryRow(ctx, `SELECT status FROM files WHERE id=$1`, id).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "error" {
+		t.Errorf("status = %q, want error", status)
+	}
+
+	if _, err := originals.Read(id); err != nil {
+		t.Errorf("original was deleted despite a failed verification: %v", err)
 	}
 }
 

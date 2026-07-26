@@ -1,7 +1,10 @@
 package worker
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -56,10 +59,35 @@ func (w *Worker) processOne(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
+	if err := w.verify(task); err != nil {
+		w.fail(ctx, task.ID, err)
+		return true, nil
+	}
+
 	if err := w.repo.MarkDone(ctx, task.ID, int64(len(comp))); err != nil {
 		return true, fmt.Errorf("worker: mark done: %w", err)
 	}
+
+	if err := w.originals.Delete(task.ID); err != nil {
+		log.Printf("worker: delete original %s: %v", task.ID, err)
+	}
 	return true, nil
+}
+
+func (w *Worker) verify(task *db.Task) error {
+	stored, err := w.containers.Read(task.ID)
+	if err != nil {
+		return fmt.Errorf("verify: read container: %w", err)
+	}
+	back, err := codec.Decompress(stored)
+	if err != nil {
+		return fmt.Errorf("verify: decompress: %w", err)
+	}
+	sum := sha256.Sum256(back)
+	if !bytes.Equal(sum[:], task.SHA256) {
+		return errors.New("verify: checksum mismatch after round-trip")
+	}
+	return nil
 }
 
 func (w *Worker) Run(ctx context.Context, n int) error {
