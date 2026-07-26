@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/restorte/lzhuff-store/internal/testutil"
 )
 
 func newTestRepo(t *testing.T) (*FilesRepo, *pgxpool.Pool, context.Context) {
@@ -22,23 +24,19 @@ func newTestRepo(t *testing.T) (*FilesRepo, *pgxpool.Pool, context.Context) {
 	t.Cleanup(func() {
 		pool.Close()
 	})
+
+	release, err := testutil.LockDB(ctx, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(release)
+
 	return NewFilesRepo(pool), pool, ctx
 }
 
 func TestFileRepo_Create(t *testing.T) {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DATABASE_URL not set")
-	}
-	ctx := context.Background()
+	repo, pool, ctx := newTestRepo(t)
 
-	pool, err := New(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-
-	repo := NewFilesRepo(pool)
 	id, err := repo.Create(ctx, "test.txt", 123, []byte("hash-placeholder"))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -53,19 +51,7 @@ func TestFileRepo_Create(t *testing.T) {
 }
 
 func TestFilesRepo_Claim(t *testing.T) {
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DATABASE_URL not set")
-	}
-	ctx := context.Background()
-
-	pool, err := New(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-
-	repo := NewFilesRepo(pool)
+	repo, pool, ctx := newTestRepo(t)
 
 	if _, err := pool.Exec(ctx, `DELETE FROM files WHERE status = 'pending'`); err != nil {
 		t.Fatal(err)

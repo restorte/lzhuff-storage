@@ -17,6 +17,7 @@ import (
 	"github.com/restorte/lzhuff-store/internal/codec"
 	"github.com/restorte/lzhuff-store/internal/db"
 	"github.com/restorte/lzhuff-store/internal/storage"
+	"github.com/restorte/lzhuff-store/internal/testutil"
 )
 
 func newTestAPI(t *testing.T) (*API, *db.FilesRepo, *pgxpool.Pool, *storage.Storage, *storage.Storage, context.Context) {
@@ -32,6 +33,12 @@ func newTestAPI(t *testing.T) (*API, *db.FilesRepo, *pgxpool.Pool, *storage.Stor
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { pool.Close() })
+
+	release, err := testutil.LockDB(ctx, pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(release)
 
 	repo := db.NewFilesRepo(pool)
 	originals, err := storage.New(t.TempDir())
