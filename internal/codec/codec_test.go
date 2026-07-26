@@ -90,3 +90,21 @@ func TestDecompressRejectsBadContainer(t *testing.T) {
 		t.Error("unknown flag: expected an error, got nil")
 	}
 }
+
+func TestDecompressSurvivesTruncation(t *testing.T) {
+	full, err := Compress([]byte("hello hello hello world world world"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := range full {
+		_, _ = Decompress(full[:i])
+	}
+}
+
+func TestDecompressRejectsAbsurdLength(t *testing.T) {
+	bogus := []byte{1, 0x7F, 0xFF, 0xFF, 0xFF}
+	if _, err := Decompress(bogus); err == nil {
+		t.Error("expected an error for an impossible declared length")
+	}
+}

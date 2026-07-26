@@ -1,6 +1,10 @@
 package huffman
 
-import "container/heap"
+import (
+	"container/heap"
+	"errors"
+	"fmt"
+)
 
 type node struct {
 	char  byte
@@ -131,12 +135,27 @@ func writeTree(n *node, w *bitWriter) {
 	writeTree(n.right, w)
 }
 
-func readTree(r *bitReader) *node {
-	if r.readBit() == 1 {
-		return &node{char: r.readByte()}
+const maxNodes = 2*256 - 1
+
+func readTree(r *bitReader, budget *int) *node {
+	if r.eof || *budget <= 0 {
+		return nil
 	}
-	left := readTree(r)
-	right := readTree(r)
+	*budget--
+
+	if r.readBit() == 1 {
+		b := r.readByte()
+		if r.eof {
+			return nil
+		}
+		return &node{char: b}
+	}
+
+	left := readTree(r, budget)
+	right := readTree(r, budget)
+	if left == nil || right == nil {
+		return nil
+	}
 	return &node{left: left, right: right}
 }
 
@@ -160,16 +179,32 @@ func Compress(data []byte) []byte {
 	return w.buf
 }
 
-func Decompress(data []byte) []byte {
+func Decompress(data []byte) ([]byte, error) {
 	r := &bitReader{buf: data}
 	b0 := int(r.readByte())
 	b1 := int(r.readByte())
 	b2 := int(r.readByte())
 	b3 := int(r.readByte())
+	if r.eof {
+		return nil, errors.New("huffman: truncated header")
+	}
 	n := b0<<24 | b1<<16 | b2<<8 | b3
 	if n == 0 {
-		return []byte{}
+		return []byte{}, nil
 	}
-	root := readTree(r)
-	return decode(r, root, n)
+	if n > 8*len(data) {
+		return nil, fmt.Errorf("huffman: length %d exceeds what %d bytes can hold", n, len(data))
+	}
+
+	budget := maxNodes
+	root := readTree(r, &budget)
+	if root == nil {
+		return nil, errors.New("huffman: malformed tree")
+	}
+
+	res := decode(r, root, n)
+	if r.eof {
+		return nil, errors.New("huffman: truncated payload")
+	}
+	return res, nil
 }

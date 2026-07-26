@@ -10,6 +10,7 @@ type bitReader struct {
 	buf     []byte
 	bytePos int
 	bitPos  int
+	eof     bool
 }
 
 func (b *bitWriter) writeBit(bit byte) {
@@ -30,6 +31,10 @@ func (b *bitWriter) flush() {
 }
 
 func (b *bitReader) readBit() byte {
+	if b.bytePos >= len(b.buf) {
+		b.eof = true
+		return 0
+	}
 	bit := (b.buf[b.bytePos] >> (7 - b.bitPos) & 1)
 	b.bitPos++
 	if b.bitPos == 8 {
