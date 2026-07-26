@@ -14,14 +14,22 @@ import (
 	"github.com/restorte/lzhuff-store/internal/storage"
 )
 
+const defaultMaxUpload = 32 << 20
+
 type API struct {
 	repo       *db.FilesRepo
 	originals  *storage.Storage
 	containers *storage.Storage
+	maxUpload  int64
 }
 
 func New(repo *db.FilesRepo, originals, containers *storage.Storage) *API {
-	return &API{repo: repo, originals: originals, containers: containers}
+	return &API{
+		repo:       repo,
+		originals:  originals,
+		containers: containers,
+		maxUpload:  defaultMaxUpload,
+	}
 }
 
 func (a *API) Routes() http.Handler {
@@ -34,8 +42,14 @@ func (a *API) Routes() http.Handler {
 func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
 
+	r.Body = http.MaxBytesReader(w, r.Body, a.maxUpload)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "read body", http.StatusBadRequest)
 		return
 	}
