@@ -26,7 +26,10 @@ func TestRoundTrip(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			back := Decompress(Compress(tt.in))
+			back, err := Decompress(Compress(tt.in))
+			if err != nil {
+				t.Fatalf("Decompress: %v", err)
+			}
 			if !bytes.Equal(back, tt.in) {
 				t.Errorf("round-trip mismatch: in=%q, out=%q", tt.in, back)
 			}
@@ -51,7 +54,11 @@ func TestTreeSerialize(t *testing.T) {
 			writeTree(root, w)
 			w.flush()
 
-			root2 := readTree(&bitReader{buf: w.buf})
+			budget := maxNodes
+			root2 := readTree(&bitReader{buf: w.buf}, &budget)
+			if root2 == nil {
+				t.Fatal("readTree returned nil on a tree it had just written")
+			}
 
 			codes1 := map[byte]string{}
 			buildCodes(root, "", codes1)

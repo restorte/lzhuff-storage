@@ -1,5 +1,10 @@
 package lz77
 
+import (
+	"errors"
+	"fmt"
+)
+
 const (
 	WINDOW    = 4096
 	MIN_MATCH = 3
@@ -151,9 +156,15 @@ func Decompress(data []byte) ([]byte, error) {
 			}
 
 			if control&(1<<i) != 0 {
+				if pos+1 >= len(data) {
+					return nil, errors.New("lz77: truncated token")
+				}
 				offset, length := unpackToken(data[pos], data[pos+1])
 				pos += 2
 				srcStart := len(result) - offset
+				if srcStart < 0 {
+					return nil, fmt.Errorf("lz77: offset %d reaches before the start of the output", offset)
+				}
 
 				for k := 0; k < length; k++ {
 					result = append(result, result[srcStart+k])

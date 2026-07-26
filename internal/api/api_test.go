@@ -160,6 +160,19 @@ func TestAPI_DownloadSanitizesFilename(t *testing.T) {
 	}
 }
 
+func TestAPI_UploadRejectsOversizeBody(t *testing.T) {
+	api, _, _, _, _, _ := newTestAPI(t)
+	api.maxUpload = 64
+
+	body := bytes.Repeat([]byte("x"), 200)
+	rec := httptest.NewRecorder()
+	api.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/files?name=big.bin", bytes.NewReader(body)))
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want 413", rec.Code)
+	}
+}
+
 func TestAPI_GetInvalidID(t *testing.T) {
 	api, _, _, _, _, _ := newTestAPI(t)
 

@@ -37,7 +37,11 @@ func Decompress(data []byte) ([]byte, error) {
 	case flagStored:
 		return data[1:], nil
 	case flagCompressed:
-		return lz77.Decompress(huffman.Decompress(data[1:]))
+		lzStream, err := huffman.Decompress(data[1:])
+		if err != nil {
+			return nil, err
+		}
+		return lz77.Decompress(lzStream)
 	default:
 		return nil, fmt.Errorf("codec: unknown container flag %d", data[0])
 	}
