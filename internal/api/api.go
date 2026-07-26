@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
+	"path/filepath"
 
 	"github.com/restorte/lzhuff-store/internal/codec"
 	"github.com/restorte/lzhuff-store/internal/db"
@@ -56,6 +58,26 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"id": id})
 }
 
+func setDownloadHeaders(w http.ResponseWriter, name, fallback string) {
+	name = filepath.Base(name)
+	if name == "." || name == string(filepath.Separator) || name == "" {
+		name = fallback
+	}
+
+	ct := mime.TypeByExtension(filepath.Ext(name))
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	if cd := mime.FormatMediaType("attachment", map[string]string{"filename": name}); cd != "" {
+		w.Header().Set("Content-Disposition", cd)
+	} else {
+		w.Header().Set("Content-Disposition", "attachment")
+	}
+}
+
 func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
@@ -85,7 +107,7 @@ func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "decompress", http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "application/octet-stream")
+		setDownloadHeaders(w, f.Name, id)
 		w.Write(raw)
 	case "error":
 		http.Error(w, "processing failed: "+f.Error, http.StatusInternalServerError)
