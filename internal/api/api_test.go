@@ -3,11 +3,13 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -91,6 +93,63 @@ func TestAPI_UploadThenDownload(t *testing.T) {
 	body, _ := io.ReadAll(rec.Body)
 	if !bytes.Equal(body, raw) {
 		t.Errorf("download = %q, want %q", body, raw)
+	}
+}
+
+func TestAPI_DownloadCarriesFilename(t *testing.T) {
+	api, repo, pool, _, containers, ctx := newTestAPI(t)
+
+	raw := []byte("id,name\n1,alice\n2,bob\n")
+	sum := sha256.Sum256(raw)
+
+	id, err := repo.Create(ctx, "report.csv", int64(len(raw)), sum[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM files WHERE id=$1`, id) })
+
+	comp, err := codec.Compress(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := containers.Write(id, comp); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.MarkDone(ctx, id, int64(len(comp))); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	api.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/files/"+id, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	cd := rec.Header().Get("Content-Disposition")
+	if !strings.Contains(cd, "report.csv") {
+		t.Errorf("Content-Disposition = %q, want it to name report.csv", cd)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct == "" {
+		t.Error("Content-Type is empty")
+	}
+	if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("missing nosniff header on user-supplied content")
+	}
+}
+
+func TestAPI_DownloadSanitizesFilename(t *testing.T) {
+	rec := httptest.NewRecorder()
+	setDownloadHeaders(rec, "../../etc/\"passwd\"\nX-Evil: yes", "fallback-id")
+
+	cd := rec.Header().Get("Content-Disposition")
+	if strings.Contains(cd, "..") || strings.Contains(cd, "/") {
+		t.Errorf("path not stripped from filename: %q", cd)
+	}
+	if strings.Contains(cd, "\n") {
+		t.Errorf("newline survived into header: %q", cd)
+	}
+	if rec.Header().Get("X-Evil") != "" {
+		t.Error("attacker managed to inject an extra header")
 	}
 }
 
