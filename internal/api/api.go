@@ -23,12 +23,15 @@ type API struct {
 	maxUpload  int64
 }
 
-func New(repo *db.FilesRepo, originals, containers *storage.Storage) *API {
+func New(repo *db.FilesRepo, originals, containers *storage.Storage, maxUpload int64) *API {
+	if maxUpload <= 0 {
+		maxUpload = defaultMaxUpload
+	}
 	return &API{
 		repo:       repo,
 		originals:  originals,
 		containers: containers,
-		maxUpload:  defaultMaxUpload,
+		maxUpload:  maxUpload,
 	}
 }
 
