@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -16,6 +18,18 @@ import (
 	"github.com/restorte/lzhuff-store/internal/storage"
 	"github.com/restorte/lzhuff-store/internal/worker"
 )
+
+func envInt(name string, def int) int {
+	v := os.Getenv(name)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		log.Fatalf("%s must be a positive integer, got %q", name, v)
+	}
+	return n
+}
 
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
@@ -30,6 +44,8 @@ func main() {
 	if addr == "" {
 		addr = ":8080"
 	}
+	workers := envInt("WORKERS", runtime.NumCPU())
+	maxUploadMB := envInt("MAX_UPLOAD_MB", 32)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -53,7 +69,7 @@ func main() {
 	w := worker.New(repo, originals, containers)
 	workerDone := make(chan struct{})
 	go func() {
-		if err := w.Run(ctx, 4); err != nil {
+		if err := w.Run(ctx, workers); err != nil {
 			log.Printf("worker: %v", err)
 		}
 		close(workerDone)
@@ -61,10 +77,10 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: api.New(repo, originals, containers).Routes(),
+		Handler: api.New(repo, originals, containers, int64(maxUploadMB)<<20).Routes(),
 	}
 	go func() {
-		log.Printf("listening on %s", addr)
+		log.Printf("listening on %s (workers=%d, max upload=%d MiB)", addr, workers, maxUploadMB)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("server: %v", err)
 		}

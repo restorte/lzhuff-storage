@@ -49,7 +49,7 @@ func newTestAPI(t *testing.T) (*API, *db.FilesRepo, *pgxpool.Pool, *storage.Stor
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(repo, originals, containers), repo, pool, originals, containers, ctx
+	return New(repo, originals, containers, defaultMaxUpload), repo, pool, originals, containers, ctx
 }
 
 func TestAPI_UploadThenDownload(t *testing.T) {
@@ -170,6 +170,15 @@ func TestAPI_UploadRejectsOversizeBody(t *testing.T) {
 
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Errorf("status = %d, want 413", rec.Code)
+	}
+}
+
+func TestAPI_NewFallsBackToDefaultLimit(t *testing.T) {
+	for _, given := range []int64{0, -1} {
+		api := New(nil, nil, nil, given)
+		if api.maxUpload != defaultMaxUpload {
+			t.Errorf("New(..., %d) set maxUpload=%d, want the default %d", given, api.maxUpload, defaultMaxUpload)
+		}
 	}
 }
 
