@@ -17,13 +17,21 @@ import (
 
 const pollInterval = time.Second
 
+type filesRepo interface {
+	Claim(ctx context.Context) (*db.Task, error)
+	MarkDone(ctx context.Context, id string, sizeCompressed int64) error
+	MarkError(ctx context.Context, id string, reason string) error
+	ResetStuck(ctx context.Context) (int64, error)
+	AllIDs(ctx context.Context) (map[string]struct{}, error)
+}
+
 type Worker struct {
-	repo       *db.FilesRepo
+	repo       filesRepo
 	originals  *storage.Storage
 	containers *storage.Storage
 }
 
-func New(repo *db.FilesRepo, originals, containers *storage.Storage) *Worker {
+func New(repo filesRepo, originals, containers *storage.Storage) *Worker {
 	return &Worker{repo: repo, originals: originals, containers: containers}
 }
 

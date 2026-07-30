@@ -182,12 +182,27 @@ func TestWorker_SweepOrphans(t *testing.T) {
 	}
 }
 
-func TestWorker_SweepOrphans_RefusesOnEmptyTable(t *testing.T) {
-	w, _, pool, _, containers, ctx := newTestWorker(t)
+type stubRepo struct {
+	filesRepo
+	ids map[string]struct{}
+}
 
-	if _, err := pool.Exec(ctx, `DELETE FROM files`); err != nil {
+func (s stubRepo) AllIDs(context.Context) (map[string]struct{}, error) {
+	return s.ids, nil
+}
+
+func TestWorker_SweepOrphans_RefusesOnEmptyTable(t *testing.T) {
+	ctx := context.Background()
+
+	originals, err := storage.New(t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
+	containers, err := storage.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := New(stubRepo{ids: map[string]struct{}{}}, originals, containers)
 
 	const id = "00000000-0000-0000-0000-0000000000ee"
 	if err := containers.Write(id, []byte("precious")); err != nil {
