@@ -90,7 +90,46 @@ func (w *Worker) verify(task *db.Task) error {
 	return nil
 }
 
-func (w *Worker) Run(ctx context.Context, n int) error {
+func (w *Worker) SweepOrphans(ctx context.Context) (int, error) {
+	ids, err := w.repo.AllIDs(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("worker: sweep: %w", err)
+	}
+
+	stores := []*storage.Storage{w.originals, w.containers}
+	onDisk := make([][]string, len(stores))
+	total := 0
+	for i, s := range stores {
+		list, err := s.List()
+		if err != nil {
+			return 0, fmt.Errorf("worker: sweep: %w", err)
+		}
+		onDisk[i] = list
+		total += len(list)
+	}
+
+	if len(ids) == 0 && total > 0 {
+		log.Printf("worker: sweep skipped — the database has no rows but %d file(s) are on disk (wrong database?)", total)
+		return 0, nil
+	}
+
+	removed := 0
+	for i, s := range stores {
+		for _, id := range onDisk[i] {
+			if _, ok := ids[id]; ok {
+				continue
+			}
+			if err := s.Delete(id); err != nil {
+				log.Printf("worker: sweep: delete %s: %v", id, err)
+				continue
+			}
+			removed++
+		}
+	}
+	return removed, nil
+}
+
+func (w *Worker) Startup(ctx context.Context) error {
 	reset, err := w.repo.ResetStuck(ctx)
 	if err != nil {
 		return fmt.Errorf("worker: reset stuck: %w", err)
@@ -99,6 +138,17 @@ func (w *Worker) Run(ctx context.Context, n int) error {
 		log.Printf("worker: recovered %d stuck task(s)", reset)
 	}
 
+	removed, err := w.SweepOrphans(ctx)
+	if err != nil {
+		return err
+	}
+	if removed > 0 {
+		log.Printf("worker: swept %d orphaned file(s)", removed)
+	}
+	return nil
+}
+
+func (w *Worker) Run(ctx context.Context, n int) error {
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
 		wg.Add(1)
