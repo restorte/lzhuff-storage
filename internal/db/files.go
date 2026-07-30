@@ -113,6 +113,29 @@ func (r *FilesRepo) MarkError(ctx context.Context, id string, reason string) err
 	return nil
 }
 
+func (r *FilesRepo) AllIDs(ctx context.Context) (map[string]struct{}, error) {
+	const q = `SELECT id FROM files`
+
+	rows, err := r.pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("files: all ids: %w", err)
+	}
+	defer rows.Close()
+
+	ids := make(map[string]struct{})
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("files: all ids: scan: %w", err)
+		}
+		ids[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("files: all ids: %w", err)
+	}
+	return ids, nil
+}
+
 func (r *FilesRepo) ResetStuck(ctx context.Context) (int64, error) {
 	const q = `UPDATE files
 			   SET status = 'pending', updated_at = now()

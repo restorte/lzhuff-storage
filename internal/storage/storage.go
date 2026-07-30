@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+const ext = ".lzh"
 
 type Storage struct {
 	root string
@@ -20,7 +23,27 @@ func New(root string) (*Storage, error) {
 }
 
 func (s *Storage) path(id string) string {
-	return filepath.Join(s.root, id+".lzh")
+	return filepath.Join(s.root, id+ext)
+}
+
+func (s *Storage) List() ([]string, error) {
+	entries, err := os.ReadDir(s.root)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list: %w", err)
+	}
+
+	ids := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ext) {
+			continue
+		}
+		ids = append(ids, strings.TrimSuffix(name, ext))
+	}
+	return ids, nil
 }
 
 func (s *Storage) Write(id string, data []byte) error {

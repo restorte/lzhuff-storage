@@ -67,6 +67,11 @@ func main() {
 	}
 
 	w := worker.New(repo, originals, containers)
+
+	if err := w.Startup(ctx); err != nil {
+		log.Fatal(err)
+	}
+
 	workerDone := make(chan struct{})
 	go func() {
 		if err := w.Run(ctx, workers); err != nil {

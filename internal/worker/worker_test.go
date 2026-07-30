@@ -140,6 +140,87 @@ func TestWorker_ProcessOne_ChecksumMismatchKeepsOriginal(t *testing.T) {
 	}
 }
 
+func TestWorker_SweepOrphans(t *testing.T) {
+	w, repo, pool, originals, containers, ctx := newTestWorker(t)
+
+	kept, err := repo.Create(ctx, "kept.txt", 1, []byte("h"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM files WHERE id=$1`, kept) })
+	if err := originals.Write(kept, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := containers.Write(kept, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+
+	const orphan = "00000000-0000-0000-0000-0000000000ff"
+	if err := originals.Write(orphan, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := containers.Write(orphan, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := w.SweepOrphans(ctx)
+	if err != nil {
+		t.Fatalf("SweepOrphans: %v", err)
+	}
+	if removed != 2 {
+		t.Errorf("removed = %d, want 2 (the orphan in both stores)", removed)
+	}
+
+	if _, err := originals.Read(orphan); err == nil {
+		t.Error("orphaned original survived the sweep")
+	}
+	if _, err := containers.Read(orphan); err == nil {
+		t.Error("orphaned container survived the sweep")
+	}
+	if _, err := containers.Read(kept); err != nil {
+		t.Errorf("referenced container was deleted: %v", err)
+	}
+}
+
+type stubRepo struct {
+	filesRepo
+	ids map[string]struct{}
+}
+
+func (s stubRepo) AllIDs(context.Context) (map[string]struct{}, error) {
+	return s.ids, nil
+}
+
+func TestWorker_SweepOrphans_RefusesOnEmptyTable(t *testing.T) {
+	ctx := context.Background()
+
+	originals, err := storage.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	containers, err := storage.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := New(stubRepo{ids: map[string]struct{}{}}, originals, containers)
+
+	const id = "00000000-0000-0000-0000-0000000000ee"
+	if err := containers.Write(id, []byte("precious")); err != nil {
+		t.Fatal(err)
+	}
+
+	removed, err := w.SweepOrphans(ctx)
+	if err != nil {
+		t.Fatalf("SweepOrphans: %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("removed = %d, want 0 — an empty table must not trigger a wipe", removed)
+	}
+	if _, err := containers.Read(id); err != nil {
+		t.Errorf("file was deleted despite the guard: %v", err)
+	}
+}
+
 func TestWorker_ProcessOne_MissingOriginalMarksError(t *testing.T) {
 	w, repo, pool, _, _, ctx := newTestWorker(t)
 
