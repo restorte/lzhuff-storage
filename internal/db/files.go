@@ -4,13 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var ErrInvalidID = errors.New("invalid id")
+var (
+	ErrInvalidID = errors.New("invalid id")
+	ErrBusy      = errors.New("file is being processed")
+)
 
 type FilesRepo struct {
 	pool *pgxpool.Pool
@@ -28,6 +32,15 @@ type File struct {
 	Name   string
 	Status string
 	Error  string
+}
+
+type FileInfo struct {
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Status         string    `json:"status"`
+	SizeOriginal   int64     `json:"size_original"`
+	SizeCompressed *int64    `json:"size_compressed"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 func NewFilesRepo(pool *pgxpool.Pool) *FilesRepo {
@@ -111,6 +124,62 @@ func (r *FilesRepo) MarkError(ctx context.Context, id string, reason string) err
 		return fmt.Errorf("files: mark error: %w", err)
 	}
 	return nil
+}
+
+func (r *FilesRepo) List(ctx context.Context, limit int) ([]FileInfo, error) {
+	const q = `SELECT id, name, status, size_original, size_compressed, created_at
+			   FROM files
+			   ORDER BY created_at DESC
+			   LIMIT $1`
+
+	rows, err := r.pool.Query(ctx, q, limit)
+	if err != nil {
+		return nil, fmt.Errorf("files: list: %w", err)
+	}
+	defer rows.Close()
+
+	files := make([]FileInfo, 0, limit)
+	for rows.Next() {
+		var f FileInfo
+		if err := rows.Scan(&f.ID, &f.Name, &f.Status, &f.SizeOriginal, &f.SizeCompressed, &f.CreatedAt); err != nil {
+			return nil, fmt.Errorf("files: list: scan: %w", err)
+		}
+		files = append(files, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("files: list: %w", err)
+	}
+	return files, nil
+}
+
+func (r *FilesRepo) Delete(ctx context.Context, id string) (bool, error) {
+	const q = `
+		WITH target AS (
+			SELECT id FROM files WHERE id = $1
+		), removed AS (
+			DELETE FROM files WHERE id = $1 AND status <> 'processing'
+			RETURNING id
+		)
+		SELECT (SELECT count(*) FROM target), (SELECT count(*) FROM removed)`
+
+	var existed, removed int
+	err := r.pool.QueryRow(ctx, q, id).Scan(&existed, &removed)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "22P02" {
+		return false, ErrInvalidID
+	}
+	if err != nil {
+		return false, fmt.Errorf("files: delete: %w", err)
+	}
+
+	switch {
+	case existed == 0:
+		return false, nil
+	case removed == 0:
+		return false, ErrBusy
+	default:
+		return true, nil
+	}
 }
 
 func (r *FilesRepo) AllIDs(ctx context.Context) (map[string]struct{}, error) {

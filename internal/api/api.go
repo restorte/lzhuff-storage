@@ -5,16 +5,22 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"path/filepath"
+	"strconv"
 
 	"github.com/restorte/lzhuff-store/internal/codec"
 	"github.com/restorte/lzhuff-store/internal/db"
 	"github.com/restorte/lzhuff-store/internal/storage"
 )
 
-const defaultMaxUpload = 32 << 20
+const (
+	defaultListLimit = 50
+	maxListLimit     = 200
+	defaultMaxUpload = 32 << 20
+)
 
 type API struct {
 	repo       *db.FilesRepo
@@ -38,7 +44,9 @@ func New(repo *db.FilesRepo, originals, containers *storage.Storage, maxUpload i
 func (a *API) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /files", a.handleUpload)
+	mux.HandleFunc("GET /files", a.handleList)
 	mux.HandleFunc("GET /files/{id}", a.handleGet)
+	mux.HandleFunc("DELETE /files/{id}", a.handleDelete)
 	return mux
 }
 
@@ -73,6 +81,58 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]string{"id": id})
+}
+
+func (a *API) handleList(w http.ResponseWriter, r *http.Request) {
+	limit := defaultListLimit
+	if s := r.URL.Query().Get("limit"); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n <= 0 || n > maxListLimit {
+			http.Error(w, "limit must be a number between 1 and "+strconv.Itoa(maxListLimit), http.StatusBadRequest)
+			return
+		}
+		limit = n
+	}
+
+	files, err := a.repo.List(r.Context(), limit)
+	if err != nil {
+		http.Error(w, "list", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(files)
+}
+
+func (a *API) handleDelete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	existed, err := a.repo.Delete(r.Context(), id)
+	if errors.Is(err, db.ErrInvalidID) {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+	if errors.Is(err, db.ErrBusy) {
+		http.Error(w, "file is being processed, try again shortly", http.StatusConflict)
+		return
+	}
+	if err != nil {
+		http.Error(w, "delete", http.StatusInternalServerError)
+		return
+	}
+	if !existed {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	if err := a.originals.Delete(id); err != nil {
+		log.Printf("api: delete original %s: %v", id, err)
+	}
+	if err := a.containers.Delete(id); err != nil {
+		log.Printf("api: delete container %s: %v", id, err)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func setDownloadHeaders(w http.ResponseWriter, name, fallback string) {

@@ -18,9 +18,11 @@ type minHeap []*node
 func (h minHeap) Len() int {
 	return len(h)
 }
+
 func (h minHeap) Less(i, j int) bool {
 	return h[i].freq < h[j].freq
 }
+
 func (h minHeap) Swap(i, j int) {
 	h[i], h[j] = h[j], h[i]
 }
