@@ -33,8 +33,10 @@
 ## Архитектура
 
 ```
-        HTTP (net/http)                POST /files → 202 {id}
-              │                        GET  /files/{id} → 200 / 202 / 400 / 404
+        HTTP (net/http)                POST   /files       → 202 {id}
+              │                        GET    /files       → 200 [список]
+              │                        GET    /files/{id}  → 200 / 202 / 400 / 404
+              │                        DELETE /files/{id}  → 204 / 400 / 404 / 409
               ▼
         PostgreSQL (pgx)               таблица files: машина состояний
               │                        pending → processing → done | error
@@ -245,4 +247,3 @@ Huffman работает лучше *после* LZ77, чем на сырых д
 
 - CI на GitHub Actions
 - Блочное сжатие (~256 КиБ) для потоковой обработки больших файлов
-- `DELETE /files/{id}` и список файлов
