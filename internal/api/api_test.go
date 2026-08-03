@@ -182,6 +182,107 @@ func TestAPI_NewFallsBackToDefaultLimit(t *testing.T) {
 	}
 }
 
+func TestAPI_Delete(t *testing.T) {
+	api, repo, pool, originals, containers, ctx := newTestAPI(t)
+
+	id, err := repo.Create(ctx, "doomed.txt", 3, []byte("h"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM files WHERE id=$1`, id) })
+	if err := originals.Write(id, []byte("abc")); err != nil {
+		t.Fatal(err)
+	}
+	if err := containers.Write(id, []byte("abc")); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	api.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/files/"+id, nil))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("204 must carry no body, got %q", rec.Body.String())
+	}
+
+	if f, err := repo.Get(ctx, id); err != nil || f != nil {
+		t.Errorf("row survived the delete: %v, %v", f, err)
+	}
+	if _, err := originals.Read(id); err == nil {
+		t.Error("original survived the delete")
+	}
+	if _, err := containers.Read(id); err == nil {
+		t.Error("container survived the delete")
+	}
+
+	rec = httptest.NewRecorder()
+	api.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/files/"+id, nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("repeat delete status = %d, want 404", rec.Code)
+	}
+}
+
+func TestAPI_DeleteInvalidID(t *testing.T) {
+	api, _, _, _, _, _ := newTestAPI(t)
+
+	rec := httptest.NewRecorder()
+	api.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/files/not-a-uuid", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestAPI_List(t *testing.T) {
+	api, repo, pool, _, _, ctx := newTestAPI(t)
+
+	id, err := repo.Create(ctx, "listed.txt", 42, []byte("h"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM files WHERE id=$1`, id) })
+
+	rec := httptest.NewRecorder()
+	api.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/files", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var got []db.FileInfo
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+
+	var found *db.FileInfo
+	for i := range got {
+		if got[i].ID == id {
+			found = &got[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("the file just created is missing from the listing of %d", len(got))
+	}
+	if found.Name != "listed.txt" || found.Status != "pending" || found.SizeOriginal != 42 {
+		t.Errorf("unexpected entry: %+v", *found)
+	}
+	if found.SizeCompressed != nil {
+		t.Errorf("size_compressed = %v, want null for a pending file", *found.SizeCompressed)
+	}
+}
+
+func TestAPI_ListRejectsBadLimit(t *testing.T) {
+	api, _, _, _, _, _ := newTestAPI(t)
+
+	for _, limit := range []string{"0", "-1", "abc", "9999"} {
+		rec := httptest.NewRecorder()
+		api.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/files?limit="+limit, nil))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("limit=%s: status = %d, want 400", limit, rec.Code)
+		}
+	}
+}
+
 func TestAPI_GetInvalidID(t *testing.T) {
 	api, _, _, _, _, _ := newTestAPI(t)
 

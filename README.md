@@ -153,6 +153,42 @@ curl -OJ "http://localhost:8080/files/f286f5d1-9ed3-41a1-a35b-8620921bf323"
 | `404 Not Found` | Нет такого id |
 | `500` | Обработка провалилась или сбой сервера |
 
+### `GET /files` — список
+
+```bash
+curl -s "http://localhost:8080/files?limit=10"
+```
+
+```json
+[
+  {
+    "id": "f286f5d1-9ed3-41a1-a35b-8620921bf323",
+    "name": "notes.txt",
+    "status": "done",
+    "size_original": 1517,
+    "size_compressed": 555,
+    "created_at": "2026-07-29T21:15:04.31Z"
+  }
+]
+```
+
+Новые записи первыми. `limit` — от 1 до 200, по умолчанию 50; иное значение даёт
+`400`. У необработанных файлов `size_compressed` равен `null`.
+
+### `DELETE /files/{id}` — удаление
+
+```bash
+curl -X DELETE "http://localhost:8080/files/f286f5d1-9ed3-41a1-a35b-8620921bf323"
+```
+
+Удаляет запись и обе копии файла на диске.
+
+| Статус | Значение |
+|--------|----------|
+| `204 No Content` | Удалено |
+| `400 Bad Request` | id не UUID |
+| `404 Not Found` | Нет такого id |
+
 ---
 
 ## Тестирование
