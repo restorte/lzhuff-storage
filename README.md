@@ -188,6 +188,7 @@ curl -X DELETE "http://localhost:8080/files/f286f5d1-9ed3-41a1-a35b-8620921bf323
 | `204 No Content` | Удалено |
 | `400 Bad Request` | id не UUID |
 | `404 Not Found` | Нет такого id |
+| `409 Conflict` | Файл прямо сейчас сжимается — повторите позже |
 
 ---
 

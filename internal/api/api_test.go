@@ -223,6 +223,30 @@ func TestAPI_Delete(t *testing.T) {
 	}
 }
 
+func TestAPI_DeleteRefusesWhileProcessing(t *testing.T) {
+	api, repo, pool, _, _, ctx := newTestAPI(t)
+
+	id, err := repo.Create(ctx, "busy.txt", 3, []byte("h"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM files WHERE id=$1`, id) })
+
+	if _, err := pool.Exec(ctx, `UPDATE files SET status='processing' WHERE id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	api.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/files/"+id, nil))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rec.Code)
+	}
+
+	if f, err := repo.Get(ctx, id); err != nil || f == nil {
+		t.Errorf("row was removed despite being in processing: %v, %v", f, err)
+	}
+}
+
 func TestAPI_DeleteInvalidID(t *testing.T) {
 	api, _, _, _, _, _ := newTestAPI(t)
 

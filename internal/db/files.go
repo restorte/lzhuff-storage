@@ -11,7 +11,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var ErrInvalidID = errors.New("invalid id")
+var (
+	ErrInvalidID = errors.New("invalid id")
+	ErrBusy      = errors.New("file is being processed")
+)
 
 type FilesRepo struct {
 	pool *pgxpool.Pool
@@ -150,9 +153,17 @@ func (r *FilesRepo) List(ctx context.Context, limit int) ([]FileInfo, error) {
 }
 
 func (r *FilesRepo) Delete(ctx context.Context, id string) (bool, error) {
-	const q = `DELETE FROM files WHERE id = $1`
+	const q = `
+		WITH target AS (
+			SELECT id FROM files WHERE id = $1
+		), removed AS (
+			DELETE FROM files WHERE id = $1 AND status <> 'processing'
+			RETURNING id
+		)
+		SELECT (SELECT count(*) FROM target), (SELECT count(*) FROM removed)`
 
-	tag, err := r.pool.Exec(ctx, q, id)
+	var existed, removed int
+	err := r.pool.QueryRow(ctx, q, id).Scan(&existed, &removed)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "22P02" {
 		return false, ErrInvalidID
@@ -160,7 +171,15 @@ func (r *FilesRepo) Delete(ctx context.Context, id string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("files: delete: %w", err)
 	}
-	return tag.RowsAffected() > 0, nil
+
+	switch {
+	case existed == 0:
+		return false, nil
+	case removed == 0:
+		return false, ErrBusy
+	default:
+		return true, nil
+	}
 }
 
 func (r *FilesRepo) AllIDs(ctx context.Context) (map[string]struct{}, error) {

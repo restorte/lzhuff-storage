@@ -112,6 +112,10 @@ func (a *API) handleDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
+	if errors.Is(err, db.ErrBusy) {
+		http.Error(w, "file is being processed, try again shortly", http.StatusConflict)
+		return
+	}
 	if err != nil {
 		http.Error(w, "delete", http.StatusInternalServerError)
 		return
