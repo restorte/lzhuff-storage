@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/restorte/lzhuff-store/internal/huffman"
-	"github.com/restorte/lzhuff-store/internal/lz77"
+	"github.com/restorte/lzhuff-storage/internal/huffman"
+	"github.com/restorte/lzhuff-storage/internal/lz77"
 )
 
 const (

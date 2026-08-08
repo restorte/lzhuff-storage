@@ -1,5 +1,5 @@
 *.exe
-lzhuff-store
+lzhuff-storage
 
 .env
 

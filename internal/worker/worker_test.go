@@ -9,10 +9,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/restorte/lzhuff-store/internal/codec"
-	"github.com/restorte/lzhuff-store/internal/db"
-	"github.com/restorte/lzhuff-store/internal/storage"
-	"github.com/restorte/lzhuff-store/internal/testutil"
+	"github.com/restorte/lzhuff-storage/internal/codec"
+	"github.com/restorte/lzhuff-storage/internal/db"
+	"github.com/restorte/lzhuff-storage/internal/storage"
+	"github.com/restorte/lzhuff-storage/internal/testutil"
 )
 
 func newTestWorker(t *testing.T) (*Worker, *db.FilesRepo, *pgxpool.Pool, *storage.Storage, *storage.Storage, context.Context) {

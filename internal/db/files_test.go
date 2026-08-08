@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/restorte/lzhuff-store/internal/testutil"
+	"github.com/restorte/lzhuff-storage/internal/testutil"
 )
 
 func newTestRepo(t *testing.T) (*FilesRepo, *pgxpool.Pool, context.Context) {

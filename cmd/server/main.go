@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/restorte/lzhuff-store/internal/api"
-	"github.com/restorte/lzhuff-store/internal/db"
-	"github.com/restorte/lzhuff-store/internal/storage"
-	"github.com/restorte/lzhuff-store/internal/worker"
+	"github.com/restorte/lzhuff-storage/internal/api"
+	"github.com/restorte/lzhuff-storage/internal/db"
+	"github.com/restorte/lzhuff-storage/internal/storage"
+	"github.com/restorte/lzhuff-storage/internal/worker"
 )
 
 func envInt(name string, def int) int {

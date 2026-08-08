@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/restorte/lzhuff-store/internal/codec"
-	"github.com/restorte/lzhuff-store/internal/db"
-	"github.com/restorte/lzhuff-store/internal/storage"
+	"github.com/restorte/lzhuff-storage/internal/codec"
+	"github.com/restorte/lzhuff-storage/internal/db"
+	"github.com/restorte/lzhuff-storage/internal/storage"
 )
 
 const (
