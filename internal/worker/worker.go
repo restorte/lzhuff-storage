@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"sync"
 	"time"
@@ -31,6 +32,11 @@ type Worker struct {
 	containers *storage.Storage
 }
 
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
 func New(repo filesRepo, originals, containers *storage.Storage) *Worker {
 	return &Worker{repo: repo, originals: originals, containers: containers}
 }
@@ -50,19 +56,8 @@ func (w *Worker) processOne(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 
-	raw, err := w.originals.Read(task.ID)
+	size, err := w.compress(task.ID)
 	if err != nil {
-		w.fail(ctx, task.ID, err)
-		return true, nil
-	}
-
-	comp, err := codec.Compress(raw)
-	if err != nil {
-		w.fail(ctx, task.ID, err)
-		return true, nil
-	}
-
-	if err := w.containers.Write(task.ID, comp); err != nil {
 		w.fail(ctx, task.ID, err)
 		return true, nil
 	}
@@ -72,7 +67,7 @@ func (w *Worker) processOne(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
-	if err := w.repo.MarkDone(ctx, task.ID, int64(len(comp))); err != nil {
+	if err := w.repo.MarkDone(ctx, task.ID, size); err != nil {
 		return true, fmt.Errorf("worker: mark done: %w", err)
 	}
 
@@ -82,17 +77,47 @@ func (w *Worker) processOne(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (w *Worker) verify(task *db.Task) error {
-	stored, err := w.containers.Read(task.ID)
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
+}
+
+func (w *Worker) compress(id string) (int64, error) {
+	src, err := w.originals.Open(id)
 	if err != nil {
-		return fmt.Errorf("verify: read container: %w", err)
+		return 0, err
 	}
-	back, err := codec.Decompress(stored)
+	defer src.Close()
+
+	dst, err := w.containers.Create(id)
 	if err != nil {
+		return 0, err
+	}
+	defer dst.Abort()
+
+	counted := &countingWriter{w: dst}
+	if err := codec.CompressStream(src, counted); err != nil {
+		return 0, err
+	}
+	if err := dst.Close(); err != nil {
+		return 0, err
+	}
+	return counted.n, nil
+}
+
+func (w *Worker) verify(task *db.Task) error {
+	r, err := w.containers.Open(task.ID)
+	if err != nil {
+		return fmt.Errorf("verify: open container: %w", err)
+	}
+	defer r.Close()
+
+	h := sha256.New()
+	if err := codec.DecompressStream(r, h); err != nil {
 		return fmt.Errorf("verify: decompress: %w", err)
 	}
-	sum := sha256.Sum256(back)
-	if !bytes.Equal(sum[:], task.SHA256) {
+	if !bytes.Equal(h.Sum(nil), task.SHA256) {
 		return errors.New("verify: checksum mismatch after round-trip")
 	}
 	return nil

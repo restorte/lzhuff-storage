@@ -104,6 +104,50 @@ func TestWorker_ProcessOne_Success(t *testing.T) {
 	}
 }
 
+func TestWorker_ProcessOne_MultiBlockFile(t *testing.T) {
+	w, repo, pool, originals, containers, ctx := newTestWorker(t)
+
+	raw := bytes.Repeat([]byte("the quick brown fox jumps over the lazy dog "), 20000)
+	sum := sha256.Sum256(raw)
+
+	id, err := repo.Create(ctx, "big.txt", int64(len(raw)), sum[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM files WHERE id=$1`, id) })
+	if err := originals.Write(id, raw); err != nil {
+		t.Fatal(err)
+	}
+
+	if worked, err := w.processOne(ctx); err != nil || !worked {
+		t.Fatalf("processOne: worked=%v err=%v", worked, err)
+	}
+
+	var status string
+	var sizeCompressed int64
+	if err := pool.QueryRow(ctx, `SELECT status, size_compressed FROM files WHERE id=$1`, id).Scan(&status, &sizeCompressed); err != nil {
+		t.Fatal(err)
+	}
+	if status != "done" {
+		t.Fatalf("status = %q, want done", status)
+	}
+
+	comp, err := containers.Read(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(comp)) != sizeCompressed {
+		t.Errorf("size_compressed = %d, container is %d bytes", sizeCompressed, len(comp))
+	}
+	back, err := codec.Decompress(comp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(back, raw) {
+		t.Error("multi-block round-trip through the worker lost data")
+	}
+}
+
 func TestWorker_ProcessOne_ChecksumMismatchKeepsOriginal(t *testing.T) {
 	w, repo, pool, originals, _, ctx := newTestWorker(t)
 

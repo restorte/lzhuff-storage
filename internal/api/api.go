@@ -54,7 +54,16 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
 
 	r.Body = http.MaxBytesReader(w, r.Body, a.maxUpload)
-	body, err := io.ReadAll(r.Body)
+
+	f, err := a.originals.CreatePending()
+	if err != nil {
+		http.Error(w, "store original", http.StatusInternalServerError)
+		return
+	}
+	defer f.Abort()
+
+	sum := sha256.New()
+	size, err := io.Copy(io.MultiWriter(f, sum), r.Body)
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
@@ -65,15 +74,14 @@ func (a *API) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sum := sha256.Sum256(body)
-
-	id, err := a.repo.Create(r.Context(), name, int64(len(body)), sum[:])
+	id, err := a.repo.Create(r.Context(), name, size, sum.Sum(nil))
 	if err != nil {
 		http.Error(w, "create record", http.StatusInternalServerError)
 		return
 	}
 
-	if err := a.originals.Write(id, body); err != nil {
+	if err := f.CommitAs(id); err != nil {
+		a.repo.Delete(r.Context(), id)
 		http.Error(w, "store original", http.StatusInternalServerError)
 		return
 	}
@@ -174,18 +182,18 @@ func (a *API) handleGet(w http.ResponseWriter, r *http.Request) {
 
 	switch f.Status {
 	case "done":
-		comp, err := a.containers.Read(id)
+		src, err := a.containers.Open(id)
 		if err != nil {
 			http.Error(w, "read container", http.StatusInternalServerError)
 			return
 		}
-		raw, err := codec.Decompress(comp)
-		if err != nil {
-			http.Error(w, "decompress", http.StatusInternalServerError)
+		defer src.Close()
+
+		setDownloadHeaders(w, f.Name, id)
+		if err := codec.DecompressStream(src, w); err != nil {
+			log.Printf("api: decompress %s: %v", id, err)
 			return
 		}
-		setDownloadHeaders(w, f.Name, id)
-		w.Write(raw)
 	case "error":
 		http.Error(w, "processing failed: "+f.Error, http.StatusInternalServerError)
 	default:

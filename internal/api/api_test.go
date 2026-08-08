@@ -103,6 +103,44 @@ func TestAPI_UploadThenDownload(t *testing.T) {
 	}
 }
 
+func TestAPI_UploadStreamsLargeBody(t *testing.T) {
+	api, _, pool, originals, _, ctx := newTestAPI(t)
+
+	raw := bytes.Repeat([]byte("streamed upload "), 100000)
+
+	rec := httptest.NewRecorder()
+	api.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/files?name=big.txt", bytes.NewReader(raw)))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202", rec.Code)
+	}
+	var up struct{ ID string }
+	if err := json.NewDecoder(rec.Body).Decode(&up); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM files WHERE id=$1`, up.ID) })
+
+	got, err := originals.Read(up.ID)
+	if err != nil {
+		t.Fatalf("original not stored: %v", err)
+	}
+	if !bytes.Equal(got, raw) {
+		t.Error("stored original differs from what was uploaded")
+	}
+
+	var size int64
+	var stored []byte
+	if err := pool.QueryRow(ctx, `SELECT size_original, sha256 FROM files WHERE id=$1`, up.ID).Scan(&size, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if size != int64(len(raw)) {
+		t.Errorf("size_original = %d, want %d", size, len(raw))
+	}
+	want := sha256.Sum256(raw)
+	if !bytes.Equal(stored, want[:]) {
+		t.Error("checksum computed while streaming does not match the body")
+	}
+}
+
 func TestAPI_DownloadCarriesFilename(t *testing.T) {
 	api, repo, pool, _, containers, ctx := newTestAPI(t)
 

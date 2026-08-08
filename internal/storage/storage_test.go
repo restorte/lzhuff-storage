@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -78,6 +79,100 @@ func TestStorage_List(t *testing.T) {
 	want := []string{"alpha", "beta"}
 	if !slices.Equal(got, want) {
 		t.Errorf("List = %v, want %v", got, want)
+	}
+}
+
+func TestStorage_StreamRoundTrip(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := bytes.Repeat([]byte("streamed in pieces "), 1000)
+
+	w, err := s.Create("streamed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Abort()
+
+	for off := 0; off < len(want); off += 512 {
+		end := min(off+512, len(want))
+		if _, err := w.Write(want[off:end]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	r, err := s.Open("streamed")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer r.Close()
+
+	got, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Error("streamed content came back different")
+	}
+}
+
+func TestStorage_AbortLeavesNothing(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := s.Create("abandoned")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte("half of something")); err != nil {
+		t.Fatal(err)
+	}
+	w.Abort()
+
+	if _, err := s.Read("abandoned"); err == nil {
+		t.Error("aborted write is readable under its final name")
+	}
+	ids, err := s.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 0 {
+		t.Errorf("List = %v, want empty — the temp file must not be left behind", ids)
+	}
+}
+
+func TestStorage_AbortAfterCloseKeepsFile(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w, err := s.Create("committed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte("keep me")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	w.Abort()
+
+	got, err := s.Read("committed")
+	if err != nil {
+		t.Fatalf("committed file disappeared: %v", err)
+	}
+	if string(got) != "keep me" {
+		t.Errorf("content = %q, want %q", got, "keep me")
 	}
 }
 
