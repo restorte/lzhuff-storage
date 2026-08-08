@@ -48,9 +48,10 @@ func (s *Storage) List() ([]string, error) {
 }
 
 type PendingFile struct {
-	f    *os.File
-	tmp  string
-	path string
+	f     *os.File
+	tmp   string
+	path  string
+	store *Storage
 }
 
 func (p *PendingFile) Write(b []byte) (int, error) {
@@ -75,13 +76,26 @@ func (p *PendingFile) Abort() {
 	os.Remove(p.tmp)
 }
 
+func (p *PendingFile) CommitAs(id string) error {
+	p.path = p.store.path(id)
+	return p.Close()
+}
+
 func (s *Storage) Create(id string) (*PendingFile, error) {
-	path := s.path(id)
-	f, err := os.CreateTemp(s.root, filepath.Base(path)+".*")
+	p, err := s.CreatePending()
+	if err != nil {
+		return nil, err
+	}
+	p.path = s.path(id)
+	return p, nil
+}
+
+func (s *Storage) CreatePending() (*PendingFile, error) {
+	f, err := os.CreateTemp(s.root, "pending.*")
 	if err != nil {
 		return nil, fmt.Errorf("storage: create temp: %w", err)
 	}
-	return &PendingFile{f: f, tmp: f.Name(), path: path}, nil
+	return &PendingFile{f: f, tmp: f.Name(), store: s}, nil
 }
 
 func (s *Storage) Open(id string) (io.ReadCloser, error) {
